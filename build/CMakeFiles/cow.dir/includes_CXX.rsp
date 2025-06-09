@@ -1,0 +1,1 @@
+-IU:/code/cow/include -I"U:/code/cow/external/glfw/glfw-master/include" -IU:/code/cow/external/assimp/include -IU:/code/cow/external/assimp/code/../include -IU:/code/cow/build/external/assimp/code/../include
