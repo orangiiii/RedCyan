@@ -18,6 +18,8 @@ float zoom = 3.0f;                // 摄像机距离（用于缩放）
 bool mousePressed = false;
 float lastX = 0.0f, lastY = 0.0f;
 
+float modelYaw = 0.0f, modelPitch = 0.0f;
+
 const char* vertexShaderSource = R"glsl(
 #version 330 core
 layout(location = 0) in vec3 aPos;
@@ -59,8 +61,15 @@ void main() {
 )glsl";
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (action == GLFW_PRESS) mousePressed = true;
-        else if (action == GLFW_RELEASE) mousePressed = false;
+        if (action == GLFW_PRESS) {
+            mousePressed = true;
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+            lastX = xpos;
+            lastY = ypos;
+        } else if (action == GLFW_RELEASE) {
+            mousePressed = false;
+        }
     }
 }
 
@@ -70,20 +79,15 @@ void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
     float dx = xpos - lastX;
     float dy = ypos - lastY;
 
-    theta += dx * 0.005f;
-    phi   += dy * 0.005f;
-
-    // 限制phi上下旋转角度
-    const float limit = glm::radians(89.0f);
-    if (phi > limit) phi = limit;
-    if (phi < -limit) phi = -limit;
+    modelYaw   += dx * 0.01f;   // 左右旋转
+    modelPitch += dy * 0.01f;   // 上下旋转
 
     lastX = xpos;
     lastY = ypos;
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-    zoom -= yoffset * 0.1f;
+    zoom += yoffset * 0.1f;
     if (zoom < 1.0f) zoom = 1.0f;
     if (zoom > 10.0f) zoom = 10.0f;
 }
@@ -270,28 +274,26 @@ int main() {
         float eyeOffset = 0.03f * zoom; // 让视差随距离变化
         // glm::mat4 model = glm::mat4(1.0f);
         // 缩小一点
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.3f, 0.0f));
-        model = glm::scale(model, glm::vec3(0.5f));
-
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIN_W / WIN_H, 0.1f, 100.0f);
-        glm::vec3 target = glm::vec3(0.0f, 0.5f, 0.0f);  // 将观察点往上提一些（Y方向偏移）
-
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(zoom *0.3f));
+        // 先绕X轴旋转pitch，再绕Y轴旋转yaw
+        model = glm::rotate(model, modelPitch, glm::vec3(1, 0, 0));
+        model = glm::rotate(model, modelYaw,   glm::vec3(0, 1, 0));
 
         float r = zoom;
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIN_W / WIN_H, 0.1f, 100.0f);
         // glm::vec3 eye = glm::vec3(
         //     r * cos(phi) * sin(theta),
         //     r * sin(phi),
         //     r * cos(phi) * cos(theta)
         // );
-          glm::vec3 eye = glm::vec3(
-            r * cos(phi) * sin(theta),
-            r * sin(phi),
-            r * cos(phi) * cos(theta)
-        );
-        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);    
+        // glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f); 
+        // glm::vec3 target = glm::vec3(0.0f, 0.5f, 0.0f);  // 将观察点往上提一些（Y方向偏移）     
+         
         // Left Eye (Red)
         glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE);
-        glm::mat4 viewL = glm::lookAt(eye - glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
+        // glm::mat4 viewL = glm::lookAt(eye - glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
+        glm::mat4 viewL = glm::lookAt(glm::vec3(-eyeOffset, 0.0f, 3.0f), glm::vec3(0,0,0),glm::vec3(0,1,0));
         glUniform1i(glGetUniformLocation(shaderProgram, "renderLeft"), true);
         glUniform3f(glGetUniformLocation(shaderProgram, "colorLeft"), 1.0f, 0.0f, 0.0f);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
@@ -300,12 +302,14 @@ int main() {
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, vertices.size() / 6);  
 
+
         // 清除深度缓冲区，保留颜色缓冲
         glClear(GL_DEPTH_BUFFER_BIT);
 
         // Right Eye (Cyan)
         glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_TRUE);
-        glm::mat4 viewR = glm::lookAt(eye + glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
+        // glm::mat4 viewR = glm::lookAt(eye + glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
+        glm::mat4 viewR = glm::lookAt(glm::vec3(eyeOffset, 0.0f, 3.0f), glm::vec3(0,0,0),glm::vec3(0,1,0));
         glUniform1i(glGetUniformLocation(shaderProgram, "renderLeft"), false);
         glUniform3f(glGetUniformLocation(shaderProgram, "colorRight"), 0.0f, 1.0f, 1.0f);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(viewR));
