@@ -51,8 +51,9 @@ uniform bool renderLeft;
 void main() {
     vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
     float diffuse = max(dot(Normal, lightDir), 0.0);
+    float ambient = 0.2; // 环境光强度
     vec3 baseColor = renderLeft ? colorLeft : colorRight;
-    vec3 finalColor = baseColor * diffuse;
+    vec3 finalColor = baseColor * (ambient + diffuse);
     FragColor = vec4(finalColor, 1.0);
 }
 )glsl";
@@ -97,35 +98,30 @@ std::vector<float> loadModelVertices(const std::string& path) {
         return vertexData;
     }
 
-    // 遍历所有 mesh (对象)
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         const aiMesh* mesh = scene->mMeshes[i];
-        
-        // 遍历每个顶点
-        for (unsigned int j = 0; j < mesh->mNumVertices; ++j) {
-            // 顶点坐标
-            vertexData.push_back(mesh->mVertices[j].x);
-            vertexData.push_back(mesh->mVertices[j].y);
-            vertexData.push_back(mesh->mVertices[j].z);
-
-            // 法线向量
-            if (mesh->HasNormals()) {
-                vertexData.push_back(mesh->mNormals[j].x);
-                vertexData.push_back(mesh->mNormals[j].y);
-                vertexData.push_back(mesh->mNormals[j].z);
-            } else {
-                vertexData.push_back(0.0f);
-                vertexData.push_back(0.0f);
-                vertexData.push_back(1.0f); // 默认法线向量
+        // 遍历三角面
+        for (unsigned int f = 0; f < mesh->mNumFaces; ++f) {
+            const aiFace& face = mesh->mFaces[f];
+            for (unsigned int j = 0; j < face.mNumIndices; ++j) {
+                unsigned int idx = face.mIndices[j];
+                // 顶点坐标
+                vertexData.push_back(mesh->mVertices[idx].x);
+                vertexData.push_back(mesh->mVertices[idx].y);
+                vertexData.push_back(mesh->mVertices[idx].z);
+                // 法线
+                if (mesh->HasNormals()) {
+                    vertexData.push_back(mesh->mNormals[idx].x);
+                    vertexData.push_back(mesh->mNormals[idx].y);
+                    vertexData.push_back(mesh->mNormals[idx].z);
+                } else {
+                    vertexData.push_back(0.0f);
+                    vertexData.push_back(0.0f);
+                    vertexData.push_back(1.0f);
+                }
             }
-            
-            // // 添加颜色（白色）
-            // vertexData.push_back(1.0f);  // 红色分量
-            // vertexData.push_back(1.0f);  // 绿色分量
-            // vertexData.push_back(1.0f);  // 蓝色分量
         }
     }
-
     return vertexData;
 }
 #if CUBE
@@ -181,7 +177,8 @@ float vertices[] = {
 };
 #endif
 #ifndef CUBE
-std::vector<float> vertices = loadModelVertices("models/windmill.obj");
+// std::vector<float> vertices = loadModelVertices("models/windmill.obj");
+std::vector<float> vertices = loadModelVertices("models/vrclass.obj");
 #endif
 
 // Shader loading utility functions here (vertexShaderSource and fragmentShaderSource skipped for brevity)
@@ -270,7 +267,7 @@ int main() {
 
         glUseProgram(shaderProgram);
 
-        float eyeOffset = 0.05f;
+        float eyeOffset = 0.03f * zoom; // 让视差随距离变化
         // glm::mat4 model = glm::mat4(1.0f);
         // 缩小一点
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.3f, 0.0f));
@@ -279,8 +276,7 @@ int main() {
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIN_W / WIN_H, 0.1f, 100.0f);
         glm::vec3 target = glm::vec3(0.0f, 0.5f, 0.0f);  // 将观察点往上提一些（Y方向偏移）
 
-        // Left Eye (Red)
-        glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE);
+
         float r = zoom;
         // glm::vec3 eye = glm::vec3(
         //     r * cos(phi) * sin(theta),
@@ -292,34 +288,28 @@ int main() {
             r * sin(phi),
             r * cos(phi) * cos(theta)
         );
-        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);    
+        // Left Eye (Red)
+        glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE);
         glm::mat4 viewL = glm::lookAt(eye - glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
-    
         glUniform1i(glGetUniformLocation(shaderProgram, "renderLeft"), true);
         glUniform3f(glGetUniformLocation(shaderProgram, "colorLeft"), 1.0f, 0.0f, 0.0f);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(viewL));
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
         glBindVertexArray(VAO);
-        #if CUBE
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        #endif
-        #ifndef CUBE
         glDrawArrays(GL_TRIANGLES, 0, vertices.size() / 6);  
-        #endif
-      
+
+        // 清除深度缓冲区，保留颜色缓冲
+        glClear(GL_DEPTH_BUFFER_BIT);
+
         // Right Eye (Cyan)
         glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_TRUE);
         glm::mat4 viewR = glm::lookAt(eye + glm::vec3(eyeOffset, 0.0f, 0.0f), target, up);
         glUniform1i(glGetUniformLocation(shaderProgram, "renderLeft"), false);
         glUniform3f(glGetUniformLocation(shaderProgram, "colorRight"), 0.0f, 1.0f, 1.0f);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(viewR));
-        #if CUBE
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        #endif
-        #ifndef CUBE
         glDrawArrays(GL_TRIANGLES, 0, vertices.size() / 6);  
-        #endif
 
         glfwSwapBuffers(window);
         glfwPollEvents();
